@@ -195,7 +195,7 @@ def build_input(inputs, u, residual, niters):
     new_input = jnp.concatenate((u, residual))
     offset = niters * len(new_input)
     # inputs = inputs.at[offset:offset + len(new_input)].set(new_input)
-    jax.lax.dynamic_update_slice(inputs, new_input, [offset])
+    inputs = jax.lax.dynamic_update_slice(inputs, new_input, [offset])
     return inputs
 
 
@@ -438,6 +438,8 @@ def main():
                 err = jnp.isnan(norm_res)
                 niters = niters_ if orig_step_fun is full_step else niters + 1
 
+            if err:
+                print('Test ERR')
             if norm_res <= restol and niters < max_episode_length and not err:
                 nsucc += 1
                 mean_niter += niters
