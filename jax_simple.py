@@ -1,4 +1,5 @@
 from functools import partial
+import datetime
 import time
 
 import jax
@@ -204,6 +205,8 @@ def build_input(inputs, u, residual, niters):
 
 def main():
     seed = 0
+    exp_start_time = str(
+        datetime.datetime.today()).replace(':', '-').replace(' ', 'T')
 
     M = 3
     dt = 1.0
@@ -424,20 +427,20 @@ def main():
             episodes += 1
 
         norm_resids = jnp.stack(norm_resids)
-        with open('norm_resids.npy', 'wb') as f:
+        with open(f'norm_resids_{exp_start_time}.npy', 'wb') as f:
             jnp.save(f, norm_resids)
 
         losses = jnp.stack(losses)
-        with open('losses.npy', 'wb') as f:
+        with open(f'losses_{exp_start_time}.npy', 'wb') as f:
             jnp.save(f, losses)
 
         all_niters = jnp.stack(all_niters)
-        with open('all_niters.npy', 'wb') as f:
+        with open(f'all_niters_{exp_start_time}.npy', 'wb') as f:
             jnp.save(f, all_niters)
 
         trained_params = opt_get_params(opt_state)
 
-        with open('model_params.npy', 'wb') as f:
+        with open(f'model_params_{exp_start_time}.npy', 'wb') as f:
             jnp.save(f, trained_params)
 
         return trained_params
@@ -504,7 +507,7 @@ def main():
         # color=color,
         # label=label,
     )
-    plt.savefig('test_results.pdf')
+    plt.savefig(f'test_results_{exp_start_time}.pdf')
     plt.show()
 
 
