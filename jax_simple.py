@@ -223,6 +223,8 @@ def main():
     orig_step_fun = step
     step_fun = orig_step_fun
 
+    collect_data_interval = 4
+
     rng = np.random.default_rng(seed)
     rng_key = jax.random.PRNGKey(seed)
 
@@ -362,13 +364,15 @@ def main():
                     print('ERR:', steps_taken)
                     break
 
-                norm_resids.append(norm_res)
-                if use_for_max_episode_length:
-                    losses.append(norm_res)
-                else:
-                    losses.append(norm_res + niters)
+                if steps_taken % collect_data_interval == 0:
+                    norm_resids.append(norm_res)
+                    if use_for_max_episode_length:
+                        losses.append(norm_res)
+                    else:
+                        losses.append(norm_res + niters)
                 niters = niters_ if orig_step_fun is full_step else niters + 1
-                all_niters.append(niters)
+                if steps_taken % collect_data_interval == 0:
+                    all_niters.append(niters)
 
                 input_batch = input_batch.at[:, batch_index].set(inputs)
                 niters_batch = niters_batch.at[batch_index].set(niters)
