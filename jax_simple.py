@@ -217,6 +217,7 @@ def main():
     # lr = 0.0003 * batch_size
     input_shape = (M * 2 * max_episode_length,)
 
+    do_train = True
     ignore_inputs = False
     orig_step_fun = step
     step_fun = orig_step_fun
@@ -359,6 +360,7 @@ def main():
                 if jnp.isnan(norm_res):
                     print('ERR:', steps_taken)
                     break
+
                 norm_resids.append(norm_res)
                 if use_for_max_episode_length:
                     losses.append(norm_res)
@@ -423,7 +425,6 @@ def main():
 
         return trained_params
 
-    do_train = True
     if do_train:
         trained_params = train(opt_state)
     else:
