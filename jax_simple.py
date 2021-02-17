@@ -59,7 +59,6 @@ schedule_polynomial_power = 1.0
 # If `False`, `start_lr`, `end_lr`, `steps_to_end_lr` and
 # `schedule_polynomial_power` are ignored.
 use_lr_scheduling = True
-input_shape = (M * 2 * max_episode_length,)
 time_step_weight = 1.0
 
 # Whether to train or load a model for testing
@@ -219,7 +218,7 @@ def full_step(action, u, env):
     return norm_res, u, residual, niters
 
 
-def build_model(hidden_layers, M, seed):
+def build_model(input_shape, hidden_layers, M, seed):
     hidden_layers = [layer for num_hidden in hidden_layers
                      for layer in [stax.Dense(num_hidden), stax.Relu]]
     (model_init, model_apply) = stax.serial(
@@ -294,7 +293,9 @@ def main():
 
     rng = np.random.default_rng(seed)
 
-    model_apply, params = build_model(hidden_layers, env_constants['M'], seed)
+    input_shape = (M * 2 * max_episode_length,)
+    model_apply, params = build_model(input_shape, hidden_layers,
+                                      env_constants['M'], seed)
     if use_lr_scheduling:
         opt_state, opt_update, opt_get_params = build_opt(
             optimizers.polynomial_decay(
