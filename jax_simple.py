@@ -169,7 +169,8 @@ def full_step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
 
 def build_model(M):
     (model_init, model_apply) = stax.serial(
-        stax.elementwise(lambda x: jnp.float64(x)),
+        stax.elementwise(
+            lambda x: jax.lax.convert_element_type(x, jnp.float64)),
         stax.Dense(64),
         stax.Relu,
         stax.Dense(64),
