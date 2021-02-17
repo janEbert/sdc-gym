@@ -217,6 +217,7 @@ def main():
     # lr = 0.0003 * batch_size
     input_shape = (M * 2 * max_episode_length,)
 
+    ignore_inputs = False
     orig_step_fun = step
     step_fun = orig_step_fun
 
@@ -347,7 +348,8 @@ def main():
                    and steps_taken < steps):
                 params = opt_get_params(opt_state)
 
-                inputs = build_input(inputs, u, residual, niters)
+                if not ignore_inputs:
+                    inputs = build_input(inputs, u, residual, niters)
                 action = model_apply(params, inputs)
                 norm_res, u, residual, niters_ = step_fun(
                     action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
@@ -446,7 +448,8 @@ def main():
             while (norm_res > restol
                    and niters < max_episode_length
                    and not err):
-                inputs = build_input(inputs, u, residual, niters)
+                if not ignore_inputs:
+                    inputs = build_input(inputs, u, residual, niters)
                 action = model_apply(trained_params, inputs)
                 norm_res, u, residual, niters_ = step_fun(
                     action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
