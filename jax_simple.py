@@ -223,7 +223,7 @@ def build_model(hidden_layers, M):
                      for layer in [stax.Dense(num_hidden), stax.Relu]]
     (model_init, model_apply) = stax.serial(
         stax.elementwise(
-            lambda x: jax.lax.convert_element_type(x, jnp.float64)),
+            lambda x: jax.lax.convert_element_type(x.real, jnp.float64)),
         *hidden_layers,
         stax.Dense(M),
         stax.Sigmoid,
