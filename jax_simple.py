@@ -366,7 +366,11 @@ def main():
         episode_losses = []
         all_niters = []
 
-        input_batch = jnp.empty(input_shape + (batch_size,))
+        if not use_simple_loss:
+            input_batch = jnp.empty(input_shape + (batch_size,),
+                                    dtype=jnp.float64)
+        else:
+            input_batch = jnp.empty(batch_size)
         niters_batch = jnp.empty(batch_size)
         batch_index = 0
 
@@ -406,9 +410,10 @@ def main():
                     all_niters.append(niters)
 
                 if not use_simple_loss:
-                    input_batch = input_batch.at[:, batch_index].set(inputs)
+                    input_batch = input_batch.at[:, batch_index].set(
+                        inputs.real)
                 else:
-                    input_batch = input_batch.at[:, batch_index].set(norm_res)
+                    input_batch = input_batch.at[batch_index].set(norm_res)
                 niters_batch = niters_batch.at[batch_index].set(niters)
                 batch_index += 1
 
