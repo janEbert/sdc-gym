@@ -36,6 +36,8 @@ seed = 0
 M = 3
 dt = 1.0
 restol = 1e-10
+lambda_real_range = [-100.0, 0.0]
+lambda_imag_range = [0.0, 10.0]
 
 max_episode_length = 50
 
@@ -76,11 +78,9 @@ def get_initial(M, dt, rng):
     Q = coll.Qmat[1:, 1:]
     u0 = jnp.ones(coll.num_nodes, dtype=jnp.complex128)
 
-    lam = (1 * rng.uniform(low=-100.0, high=0.0)
-           + 0j * rng.uniform(low=0.0, high=10.0))
-    # lam = (1 * rng.uniform(low=-10.0, high=0.0)
-    #        + 0j * rng.uniform(low=0.0, high=10.0))
-    # lam = -10.0 + 0.0j
+    lam = (1 * rng.uniform(low=lambda_real_range[0], high=lambda_real_range[1])
+           + 0j * rng.uniform(low=lambda_imag_range[0],
+                              high=lambda_imag_range[1]))
     C = jnp.eye(coll.num_nodes) - lam * dt * Q
     u = jnp.ones(coll.num_nodes, dtype=jnp.complex128)
 
