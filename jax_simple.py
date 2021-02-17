@@ -43,17 +43,17 @@ max_episode_length = 50
 
 steps = 1000000
 batch_size = 256
-hidden_layers = [128] * 3
+hidden_layers = [32, 64, 32]
 # lr = 0.0001
 # lr = 0.0003
 # lr = 0.001
 # lr = 0.003
 lr = 0.0003 * (np.log2(batch_size) + 1)
 # lr = 0.0003 * batch_size
-# start_lr = 0.0003 * (np.log2(batch_size) + 1)
-start_lr = 0.0003 * batch_size
-end_lr = 0.0001
-steps_to_end_lr = 200000
+start_lr = 0.0003 * (np.log2(batch_size) + 1)
+# start_lr = 0.0003 * batch_size
+end_lr = 0.0003
+steps_to_end_lr = 50000
 schedule_polynomial_power = 1.0
 # Whether to use learning rate scheduling. If `True`, `lr` is ignored.
 # If `False`, `start_lr`, `end_lr`, `steps_to_end_lr` and
