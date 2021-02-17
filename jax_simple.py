@@ -58,6 +58,7 @@ schedule_polynomial_power = 1.0
 # `schedule_polynomial_power` are ignored.
 use_lr_scheduling = True
 input_shape = (M * 2 * max_episode_length,)
+time_step_weight = 1.0
 
 # Whether to train or load a model for testing
 do_train = True
@@ -173,8 +174,8 @@ def full_step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
         for niters in range(max_episode_length):
             u = _update_u(u, Pinv, u0, C)
             residual = _residual(u, u0, C)
-            norm_res = _norm(residual) * niters
-        return norm_res, u, residual, max_episode_length
+            norm_res = _norm(residual)
+        return (norm_res, u, residual, max_episode_length)
 
     if use_jax_control_flow:
         init_val = (u, residual, norm_res, 0)
@@ -249,6 +250,11 @@ def build_input(inputs, u, residual, niters):
     return inputs
 
 
+@jax.jit
+def calc_loss(norm_res, niters):
+    return norm_res + niters * time_step_weight
+
+
 def main():
     exp_start_time = str(
         datetime.datetime.today()).replace(':', '-').replace(' ', 'T')
@@ -297,9 +303,7 @@ def main():
                     None,
                 )
             else:
-                if unroll_full_step:
-                    return norm_res
-                return jnp.sum(norm_res + niters)
+                return jnp.sum(calc_loss(norm_res, niters))
                 # if not jnp.isnan(norm_res):
                 #     return -norm_res
                 # return jnp.finfo('d').min
@@ -335,7 +339,7 @@ def main():
             # update = jax.jit(update)
     else:
         def loss(params, norm_res, niters):
-            return jnp.sum(norm_res + niters)
+            return jnp.sum(calc_loss(norm_res, niters))
 
         if use_unstable_jax_jit:
             loss = jax.jit(loss)
@@ -399,14 +403,10 @@ def main():
                     print('ERR:', steps_taken)
                     break
 
-                if steps_taken % collect_data_interval == 0:
-                    norm_resids.append(norm_res)
-                    if unroll_full_step:
-                        losses.append(norm_res)
-                    else:
-                        losses.append(norm_res + niters)
                 niters = niters_ if use_full_step_env else niters + 1
                 if steps_taken % collect_data_interval == 0:
+                    norm_resids.append(norm_res)
+                    losses.append(calc_loss(norm_res, niters))
                     all_niters.append(niters)
 
                 if not use_simple_loss:
@@ -447,7 +447,7 @@ def main():
 
             if not jnp.isnan(norm_res):
                 episode_norm_resids.append(norm_res)
-                episode_losses.append(norm_res + niters)
+                episode_losses.append(calc_loss(norm_res, niters))
             episodes += 1
 
         norm_resids = jnp.stack(norm_resids)
