@@ -15,15 +15,56 @@ from pySDC.implementations.collocation_classes.gauss_radau_right import \
 # Use double precision
 jax.config.update('jax_enable_x64', True)
 
+# Parameters
+
 # Is buggy so don't use until fixed
 use_jax_control_flow = False
+# Whether to JIT loss and other functions that may not work
+use_unstable_jax_jit = True
+# Whether to use a loss function that does not call the step function.
+# Probably does not work; the gradients would need to be tracked all the
+# way into the batch.
+use_simple_loss = False
+# Whether to use the `full_step` function
+use_full_step_env = False
 # For full step: do not stop early, always iterate
 # `max_episode_length` times. Enables us to JIT-compile the function.
 unroll_full_step = False
-# Whether to JIT loss and other functions that may not work
-use_unstable_jax_jit = True
-use_simple_loss = False
 
+seed = 0
+
+M = 3
+dt = 1.0
+restol = 1e-10
+
+max_episode_length = 50
+
+steps = 1000000
+batch_size = 256
+hidden_layers = [128] * 3
+# lr = 0.0001
+# lr = 0.0003
+# lr = 0.001
+# lr = 0.003
+lr = 0.0003 * (np.log2(batch_size) + 1)
+# lr = 0.0003 * batch_size
+# start_lr = 0.0003 * (np.log2(batch_size) + 1)
+start_lr = 0.0003 * batch_size
+end_lr = 0.0001
+steps_to_end_lr = 200000
+input_shape = (M * 2 * max_episode_length,)
+use_lr_scheduling = True
+
+# Whether to train or load a model for testing
+do_train = True
+# Whether to have only inputs of zeros
+ignore_inputs = False
+
+# How regularly to append data to our collections
+collect_data_interval = 4
+
+
+# Functions
 
 def get_initial(M, dt, rng):
     coll = CollGaussRadau_Right(M, 0, 1)
@@ -205,36 +246,13 @@ def build_input(inputs, u, residual, niters):
 
 
 def main():
-    seed = 0
     exp_start_time = str(
         datetime.datetime.today()).replace(':', '-').replace(' ', 'T')
 
-    M = 3
-    dt = 1.0
-    restol = 1e-10
-
-    max_episode_length = 50
-
-    steps = 100000
-    batch_size = 64
-    hidden_layers = [64, 64]
-    # lr = 0.0001
-    # lr = 0.0003
-    # lr = 0.001
-    lr = 0.0003 * (np.log2(batch_size) + 1)
-    # lr = 0.0003 * batch_size
-    start_lr = 0.0003 * (np.log2(batch_size) + 1)
-    end_lr = 0.0001
-    steps_to_end_lr = 50000
-    input_shape = (M * 2 * max_episode_length,)
-    use_lr_scheduling = True
-
-    do_train = True
-    ignore_inputs = False
-    orig_step_fun = step
-    step_fun = orig_step_fun
-
-    collect_data_interval = 4
+    if use_full_step_env:
+        step_fun = full_step
+    else:
+        step_fun = step
 
     rng = np.random.default_rng(seed)
     rng_key = jax.random.PRNGKey(seed)
@@ -273,14 +291,6 @@ def main():
                     lambda _: jnp.sum(norm_res),
                     None,
                 )
-
-                # return jax.lax.cond(
-                #     jnp.isnan(norm_res),
-                #     None,
-                #     lambda _: -float(max_episode_length),
-                #     None,
-                #     lambda _: norm_res,
-                # )
             else:
                 if unroll_full_step:
                     return norm_res
@@ -320,7 +330,7 @@ def main():
             # update = jax.jit(update)
     else:
         def loss(params, norm_res, niters):
-            return norm_res + niters
+            return jnp.sum(norm_res + niters)
 
         if use_unstable_jax_jit:
             loss = jax.jit(loss)
@@ -386,11 +396,14 @@ def main():
                         losses.append(norm_res)
                     else:
                         losses.append(norm_res + niters)
-                niters = niters_ if orig_step_fun is full_step else niters + 1
+                niters = niters_ if use_full_step_env else niters + 1
                 if steps_taken % collect_data_interval == 0:
                     all_niters.append(niters)
 
-                input_batch = input_batch.at[:, batch_index].set(inputs)
+                if not use_simple_loss:
+                    input_batch = input_batch.at[:, batch_index].set(inputs)
+                else:
+                    input_batch = input_batch.at[:, batch_index].set(norm_res)
                 niters_batch = niters_batch.at[batch_index].set(niters)
                 batch_index += 1
 
@@ -403,7 +416,7 @@ def main():
                         )
                     else:
                         opt_state = update(
-                            steps_taken, opt_state, norm_res, niters,
+                            steps_taken, opt_state, input_batch, niters_batch,
                         )
                     batch_index = 0
 
@@ -479,7 +492,7 @@ def main():
                 )
 
                 err = jnp.isnan(norm_res)
-                niters = niters_ if orig_step_fun is full_step else niters + 1
+                niters = niters_ if use_full_step_env else niters + 1
 
             if err:
                 print('Test ERR')
