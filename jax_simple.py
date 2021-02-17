@@ -385,6 +385,7 @@ def main():
         losses = []
         episode_losses = []
         all_niters = []
+        episode_niters = []
 
         if not use_simple_loss:
             input_batch = jnp.empty(input_shape + (batch_size,),
@@ -446,7 +447,7 @@ def main():
                     num_last_entries = 500
                     last_losses = jnp.stack(losses[-num_last_entries:])
                     last_resids = jnp.stack(norm_resids[-num_last_entries:])
-                    last_niters = jnp.stack(all_niters[-num_last_entries:])
+                    last_niters = jnp.stack(episode_niters[-num_last_entries:])
                     print(f'Took {steps_taken} steps in '
                           f'{time.perf_counter() - start_time:.2f} seconds. '
                           f'{episodes} episodes. '
@@ -454,11 +455,12 @@ def main():
                           f'Means over last {num_last_entries}: '
                           f'loss: {jnp.mean(last_losses)} '
                           f'resids: {jnp.mean(last_resids)} '
-                          f'niters: {jnp.mean(last_niters):.2f}')
+                          f'episode niters: {jnp.mean(last_niters):.2f}')
 
             if not jnp.isnan(norm_res):
                 episode_norm_resids.append(norm_res)
                 episode_losses.append(calc_loss(norm_res, niters))
+                episode_niters.append(niters)
             episodes += 1
 
         norm_resids = jnp.stack(norm_resids)
