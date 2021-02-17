@@ -167,14 +167,13 @@ def full_step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
     return norm_res, u, residual, niters
 
 
-def build_model(M):
+def build_model(hidden_layers, M):
+    hidden_layers = [layer for num_hidden in hidden_layers
+                     for layer in [stax.Dense(num_hidden), stax.Relu]]
     (model_init, model_apply) = stax.serial(
         stax.elementwise(
             lambda x: jax.lax.convert_element_type(x, jnp.float64)),
-        stax.Dense(64),
-        stax.Relu,
-        stax.Dense(64),
-        stax.Relu,
+        *hidden_layers,
         stax.Dense(M),
         stax.Sigmoid,
     )
@@ -211,6 +210,7 @@ def main():
 
     steps = 100000
     batch_size = 64
+    hidden_layers = [64, 64]
     # lr = 0.0001
     # lr = 0.0003
     # lr = 0.001
@@ -232,7 +232,7 @@ def main():
     rng = np.random.default_rng(seed)
     rng_key = jax.random.PRNGKey(seed)
 
-    model_init, model_apply = build_model(M)
+    model_init, model_apply = build_model(hidden_layers, M)
     _, params = model_init(rng_key, input_shape)
     if use_lr_scheduling:
         opt_state, opt_update, opt_get_params = build_opt(
