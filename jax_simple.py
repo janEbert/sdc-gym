@@ -52,8 +52,12 @@ lr = 0.0003 * (np.log2(batch_size) + 1)
 start_lr = 0.0003 * batch_size
 end_lr = 0.0001
 steps_to_end_lr = 200000
-input_shape = (M * 2 * max_episode_length,)
+schedule_polynomial_power = 1.0
+# Whether to use learning rate scheduling. If `True`, `lr` is ignored.
+# If `False`, `start_lr`, `end_lr`, `steps_to_end_lr` and
+# `schedule_polynomial_power` are ignored.
 use_lr_scheduling = True
+input_shape = (M * 2 * max_episode_length,)
 
 # Whether to train or load a model for testing
 do_train = True
@@ -262,7 +266,8 @@ def main():
     if use_lr_scheduling:
         opt_state, opt_update, opt_get_params = build_opt(
             optimizers.polynomial_decay(
-                start_lr, steps_to_end_lr, end_lr, 1.0), params)
+                start_lr, steps_to_end_lr, end_lr, schedule_polynomial_power),
+            params)
     else:
         opt_state, opt_update, opt_get_params = build_opt(lr, params)
 
