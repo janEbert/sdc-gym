@@ -83,11 +83,13 @@ def get_env(env_constants, rng):
     u = jnp.ones(env_constants['coll_num_nodes'], dtype=jnp.complex128)
 
     initial_residual = env_constants['u0'] - C @ u
+    norm_res = _norm(initial_residual)
     env = {
         **env_constants,
         'lam': lam,
         'C': C,
         'initial_residual': initial_residual,
+        'initial_norm_res': norm_res,
     }
     return env, u
 
@@ -394,7 +396,7 @@ def main():
         while steps_taken < steps:
             env, u = get_env(env_constants, rng)
             residual = env['initial_residual']
-            norm_res = _norm(residual)
+            norm_res = env['initial_norm_res']
             inputs = init_input(input_shape)
 
             niters = 0
