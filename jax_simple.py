@@ -307,27 +307,25 @@ def main():
         # step_fun = jax.jit(step_fun)
 
     if not use_simple_loss:
-        def loss(params, u, residual, env, inputs, niters):
-            # print(u, residual)
-            # inputs = build_input(inputs, u, residual, niters)
+        def loss(params, u, residual, env, input_batch, niters_batch):
             predict_batch = jax.vmap(
-                lambda input_: model_apply(params, input_),
+                lambda inputs: model_apply(params, inputs),
                 -1,
             )
-            actions = predict_batch(inputs)
+            action_batch = predict_batch(input_batch)
             step_batch = jax.vmap(lambda action: step_fun(action, u, env)[0])
-            norm_res = step_batch(actions)
+            norm_res_batch = step_batch(action_batch)
             if use_jax_control_flow:
                 return jax.lax.cond(
-                    jnp.isnan(norm_res),
+                    jnp.isnan(norm_res_batch),
                     lambda _: float(env['max_episode_length']),
-                    lambda _: jnp.sum(norm_res),
+                    lambda _: jnp.sum(norm_res_batch),
                     None,
                 )
             else:
-                return jnp.sum(calc_loss(norm_res, niters))
-                # if not jnp.isnan(norm_res):
-                #     return -norm_res
+                return jnp.sum(calc_loss(norm_res_batch, niters_batch))
+                # if not jnp.isnan(norm_res_batch):
+                #     return -norm_res_batch
                 # return jnp.finfo('d').min
                 # return -float(env['max_episode_length'])
 
@@ -341,11 +339,11 @@ def main():
             # grad_loss = jax.jit(grad_loss, static_argnums=(3,))
             grad_loss = jax.jit(jax.grad(loss))
 
-        def update(i, opt_state, u, residual, env, inputs, niters):
+        def update(i, opt_state, u, residual, env, input_batch, niters_batch):
             params = opt_get_params(opt_state)
             return opt_update(
                 i,
-                grad_loss(params, u, residual, env, inputs, niters),
+                grad_loss(params, u, residual, env, input_batch, niters_batch),
                 opt_state,
             )
 
@@ -353,8 +351,8 @@ def main():
             # update = jax.jit(update, static_argnums=(4,))
             update = jax.jit(update)
     else:
-        def loss(params, norm_res, niters):
-            return jnp.sum(calc_loss(norm_res, niters))
+        def loss(params, norm_res_batch, niters_batch):
+            return jnp.sum(calc_loss(norm_res_batch, niters_batch))
 
         if use_unstable_jax_jit:
             loss = jax.jit(loss)
@@ -364,11 +362,11 @@ def main():
         if use_unstable_jax_jit:
             grad_loss = jax.jit(jax.grad(loss))
 
-        def update(i, opt_state, norm_res, niters):
+        def update(i, opt_state, norm_res_batch, niters_batch):
             params = opt_get_params(opt_state)
             return opt_update(
                 i,
-                grad_loss(params, norm_res, niters),
+                grad_loss(params, norm_res_batch, niters_batch),
                 opt_state,
             )
 
