@@ -211,8 +211,10 @@ def main():
     steps = 100000
     batch_size = 64
     # lr = 0.0001
-    lr = 0.0003
+    # lr = 0.0003
     # lr = 0.001
+    lr = 0.0003 * (np.log2(batch_size) + 1)
+    # lr = 0.0003 * batch_size
     input_shape = (M * 2 * max_episode_length,)
 
     orig_step_fun = step
@@ -235,14 +237,19 @@ def main():
                  restol, inputs, niters):
             # print(u, residual)
             # inputs = build_input(inputs, u, residual, niters)
-            action = model_apply(params, inputs)
-            norm_res = step_fun(action, u, Q, M, coll_num_nodes, lam, dt, u0,
-                                C, restol, max_episode_length)[0]
+            predict_batch = jax.vmap(
+                lambda input_: model_apply(params, input_), -1)
+            actions = predict_batch(inputs)
+            step_batch = jax.vmap(
+                lambda action: step_fun(
+                    action, u, Q, M, coll_num_nodes, lam,
+                    dt, u0, C, restol, max_episode_length)[0])
+            norm_res = step_batch(actions)
             if use_jax_control_flow:
                 return jax.lax.cond(
                     jnp.isnan(norm_res),
                     lambda _: float(max_episode_length),
-                    lambda _: norm_res,
+                    lambda _: jnp.sum(norm_res),
                     None,
                 )
 
@@ -256,7 +263,7 @@ def main():
             else:
                 if use_for_max_episode_length:
                     return norm_res
-                return norm_res + niters
+                return jnp.sum(norm_res + niters)
                 # if not jnp.isnan(norm_res):
                 #     return -norm_res
                 # return jnp.finfo('d').min
@@ -323,6 +330,10 @@ def main():
         episode_losses = []
         all_niters = []
 
+        input_batch = jnp.empty(input_shape + (batch_size,))
+        niters_batch = jnp.empty(batch_size)
+        batch_index = 0
+
         while steps_taken < steps:
             (coll, Q, u0, lam, C, u, residual) = get_initial(M, dt, rng)
             norm_res = _norm(residual)
@@ -354,15 +365,22 @@ def main():
                 niters = niters_ if orig_step_fun is full_step else niters + 1
                 all_niters.append(niters)
 
-                if not use_simple_loss:
-                    opt_state = update(
-                        steps_taken, opt_state, u, residual, Q, M,
-                        coll_num_nodes, lam, dt, u0, C, restol, inputs, niters,
-                    )
-                else:
-                    opt_state = update(
-                        steps_taken, opt_state, norm_res, niters,
-                    )
+                input_batch = input_batch.at[:, batch_index].set(inputs)
+                niters_batch = niters_batch.at[batch_index].set(niters)
+                batch_index += 1
+
+                if batch_index >= batch_size:
+                    if not use_simple_loss:
+                        opt_state = update(
+                            steps_taken, opt_state, u, residual, Q, M,
+                            coll_num_nodes, lam, dt, u0, C, restol,
+                            input_batch, niters_batch,
+                        )
+                    else:
+                        opt_state = update(
+                            steps_taken, opt_state, norm_res, niters,
+                        )
+                    batch_index = 0
 
                 steps_taken += 1
                 if steps_taken % 500 == 0:
