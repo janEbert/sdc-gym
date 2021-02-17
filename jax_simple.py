@@ -73,27 +73,23 @@ collect_data_interval = 4
 
 # Functions
 
-def get_initial(M, dt, rng):
-    coll = CollGaussRadau_Right(M, 0, 1)
-    Q = coll.Qmat[1:, 1:]
-    u0 = jnp.ones(coll.num_nodes, dtype=jnp.complex128)
+def get_env(env_constants, rng):
+    lam = (1 * rng.uniform(low=env_constants['lambda_real_range'][0],
+                           high=env_constants['lambda_real_range'][1])
+           + 0j * rng.uniform(low=env_constants['lambda_imag_range'][0],
+                              high=env_constants['lambda_imag_range'][1]))
+    C = (jnp.eye(env_constants['coll_num_nodes'])
+         - lam * env_constants['dt'] * env_constants['Q'])
+    u = jnp.ones(env_constants['coll_num_nodes'], dtype=jnp.complex128)
 
-    lam = (1 * rng.uniform(low=lambda_real_range[0], high=lambda_real_range[1])
-           + 0j * rng.uniform(low=lambda_imag_range[0],
-                              high=lambda_imag_range[1]))
-    C = jnp.eye(coll.num_nodes) - lam * dt * Q
-    u = jnp.ones(coll.num_nodes, dtype=jnp.complex128)
-
-    initial_residual = u0 - C @ u
-    return (
-        coll,
-        Q,
-        u0,
-        lam,
-        C,
-        u,
-        initial_residual,
-    )
+    initial_residual = env_constants['u0'] - C @ u
+    env = {
+        **env_constants,
+        'lam': lam,
+        'C': C,
+        'initial_residual': initial_residual,
+    }
+    return env, u
 
 
 # @partial(jax.jit, static_argnums=(2,))
@@ -128,9 +124,12 @@ def _get_prec(action, Q, M):
     return Qdmat
 
 
-@partial(jax.jit, static_argnums=(0, 2))
-def _get_pinv(coll_num_nodes, lam, dt, Qdmat):
-    return jnp.linalg.inv(jnp.eye(coll_num_nodes) - lam * dt * Qdmat)
+# @partial(jax.jit, static_argnums=(0,))
+@jax.jit
+def _get_pinv(coll_num_nodes_arr, lam, dt, Qdmat):
+    # We use an array of the desired size to be able to JIT this function.
+    # Stupid and unnecessary, but it works.
+    return jnp.linalg.inv(jnp.eye(coll_num_nodes_arr.size) - lam * dt * Qdmat)
 
 
 @jax.jit
@@ -148,34 +147,34 @@ def _norm(res):
     return jnp.linalg.norm(res, jnp.inf)
 
 
-@partial(jax.jit, static_argnums=(3, 4, 6, 9, 10))
-def step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, _restol,
-         _max_episode_length):
-    Qdmat = _get_prec(action, Q, M)
-    Pinv = _get_pinv(coll_num_nodes, lam, dt, Qdmat)
+# @partial(jax.jit, static_argnums=(2,))
+@jax.jit
+def step(action, u, env):
+    Qdmat = _get_prec(action, env['Q'], env['M'])
+    Pinv = _get_pinv(env['coll_num_nodes_arr'], env['lam'], env['dt'], Qdmat)
     # norm_res_old = _norm(init_resid)
 
-    u = _update_u(u, Pinv, u0, C)
-    residual = _residual(u, u0, C)
+    u = _update_u(u, Pinv, env['u0'], env['C'])
+    residual = _residual(u, env['u0'], env['C'])
     norm_res = _norm(residual)
     return norm_res, u, residual, 1
 
 
-@partial(jax.jit, static_argnums=(3, 4, 6, 9, 10))
-def full_step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
-              max_episode_length):
-    Qdmat = _get_prec(action, Q, M)
-    Pinv = _get_pinv(coll_num_nodes, lam, dt, Qdmat)
-    residual = _residual(u, u0, C)
+# @partial(jax.jit, static_argnums=(2,))
+@jax.jit
+def full_step(action, u, env):
+    Qdmat = _get_prec(action, env['Q'], env['M'])
+    Pinv = _get_pinv(env['coll_num_nodes_arr'], env['lam'], env['dt'], Qdmat)
+    residual = _residual(u, env['u0'], env['C'])
     norm_res = _norm(residual)
     # norm_res_old = _norm(init_resid)
 
     if unroll_full_step:
-        for niters in range(max_episode_length):
-            u = _update_u(u, Pinv, u0, C)
-            residual = _residual(u, u0, C)
+        for niters in range(env['max_episode_length']):
+            u = _update_u(u, Pinv, env['u0'], env['C'])
+            residual = _residual(u, env['u0'], env['C'])
             norm_res = _norm(residual)
-        return (norm_res, u, residual, max_episode_length)
+        return (norm_res, u, residual, env['max_episode_length'])
 
     if use_jax_control_flow:
         init_val = (u, residual, norm_res, 0)
@@ -183,22 +182,22 @@ def full_step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
         def cond_fun(args):
             (_, _, norm_res, niters) = args
             # return jax.lax.cond(
-            #     (norm_res > restol
-            #      and niters < max_episode_length
+            #     (norm_res > env['restol']
+            #      and niters < env['max_episode_length']
             #      and not jnp.isnan(norm_res)),
             #     lambda _: True,
             #     lambda _: False,
             #     None,
             # )
             # return norm_res > 1E-10 and niters < max_episode_length
-            return (norm_res > restol
-                    and niters < max_episode_length
+            return (norm_res > env['restol']
+                    and niters < env['max_episode_length']
                     and not jnp.isnan(norm_res))
 
         def body_fun(args):
             (u, residual, norm_res, niters) = args
-            u = _update_u(u, Pinv, u0, C)
-            residual = _residual(u, u0, C)
+            u = _update_u(u, Pinv, env['u0'], env['C'])
+            residual = _residual(u, env['u0'], env['C'])
             norm_res = _norm(residual)
             return (u, residual, norm_res, niters + 1)
 
@@ -207,18 +206,18 @@ def full_step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
     else:
         niters = 0
 
-        while (norm_res > restol
-               and niters < max_episode_length
+        while (norm_res > env['restol']
+               and niters < env['max_episode_length']
                and not jnp.isnan(norm_res)):
-            u = _update_u(u, Pinv, u0, C)
-            residual = _residual(u, u0, C)
+            u = _update_u(u, Pinv, env['u0'], env['C'])
+            residual = _residual(u, env['u0'], env['C'])
             norm_res = _norm(residual)
             niters = niters + 1
 
     return norm_res, u, residual, niters
 
 
-def build_model(hidden_layers, M):
+def build_model(hidden_layers, M, seed):
     hidden_layers = [layer for num_hidden in hidden_layers
                      for layer in [stax.Dense(num_hidden), stax.Relu]]
     (model_init, model_apply) = stax.serial(
@@ -228,7 +227,10 @@ def build_model(hidden_layers, M):
         stax.Dense(M),
         stax.Sigmoid,
     )
-    return (model_init, model_apply)
+
+    rng_key = jax.random.PRNGKey(seed)
+    _, params = model_init(rng_key, input_shape)
+    return (model_apply, params)
 
 
 def build_opt(lr, params):
@@ -255,7 +257,31 @@ def calc_loss(norm_res, niters):
     return norm_res + niters * time_step_weight
 
 
+def get_env_constants():
+    coll = CollGaussRadau_Right(M, 0, 1)
+    Q = coll.Qmat[1:, 1:]
+    u0 = jnp.ones(coll.num_nodes, dtype=jnp.complex128)
+
+    return {
+        'M': M,
+        'dt': dt,
+        'restol': restol,
+        'lambda_real_range': lambda_real_range,
+        'lambda_imag_range': lambda_imag_range,
+        'max_episode_length': max_episode_length,
+
+        'coll_num_nodes': coll.num_nodes,
+        # We use an array the size of `coll_num_nodes` to be able to JIT the
+        # `_get_pinv` function.
+        'coll_num_nodes_arr': jnp.empty(coll.num_nodes),
+        'Q': Q,
+        'u0': u0,
+    }
+
+
 def main():
+    env_constants = get_env_constants()
+
     exp_start_time = str(
         datetime.datetime.today()).replace(':', '-').replace(' ', 'T')
 
@@ -265,10 +291,8 @@ def main():
         step_fun = step
 
     rng = np.random.default_rng(seed)
-    rng_key = jax.random.PRNGKey(seed)
 
-    model_init, model_apply = build_model(hidden_layers, M)
-    _, params = model_init(rng_key, input_shape)
+    model_apply, params = build_model(hidden_layers, env_constants['M'], seed)
     if use_lr_scheduling:
         opt_state, opt_update, opt_get_params = build_opt(
             optimizers.polynomial_decay(
@@ -283,22 +307,20 @@ def main():
         # step_fun = jax.jit(step_fun)
 
     if not use_simple_loss:
-        def loss(params, u, residual, Q, M, coll_num_nodes, lam, dt, u0, C,
-                 restol, inputs, niters):
+        def loss(params, u, residual, env, inputs, niters):
             # print(u, residual)
             # inputs = build_input(inputs, u, residual, niters)
             predict_batch = jax.vmap(
-                lambda input_: model_apply(params, input_), -1)
+                lambda input_: model_apply(params, input_),
+                -1,
+            )
             actions = predict_batch(inputs)
-            step_batch = jax.vmap(
-                lambda action: step_fun(
-                    action, u, Q, M, coll_num_nodes, lam,
-                    dt, u0, C, restol, max_episode_length)[0])
+            step_batch = jax.vmap(lambda action: step_fun(action, u, env)[0])
             norm_res = step_batch(actions)
             if use_jax_control_flow:
                 return jax.lax.cond(
                     jnp.isnan(norm_res),
-                    lambda _: float(max_episode_length),
+                    lambda _: float(env['max_episode_length']),
                     lambda _: jnp.sum(norm_res),
                     None,
                 )
@@ -307,36 +329,29 @@ def main():
                 # if not jnp.isnan(norm_res):
                 #     return -norm_res
                 # return jnp.finfo('d').min
-                # return -float(max_episode_length)
+                # return -float(env['max_episode_length'])
 
         if use_unstable_jax_jit:
-            loss = jax.jit(loss, static_argnums=(4, 5, 7, 10))
-            # loss = jax.jit(loss)
+            # loss = jax.jit(loss, static_argnums=(3,))
+            loss = jax.jit(loss)
 
         grad_loss = jax.grad(loss)
 
         if use_unstable_jax_jit:
-            grad_loss = jax.jit(grad_loss, static_argnums=(4, 5, 7, 10))
-            # grad_loss = jax.jit(jax.grad(loss))
+            # grad_loss = jax.jit(grad_loss, static_argnums=(3,))
+            grad_loss = jax.jit(jax.grad(loss))
 
-        def update(
-                i, opt_state, u, residual, Q, M, coll_num_nodes, lam, dt, u0,
-                C, restol, inputs, niters,
-        ):
+        def update(i, opt_state, u, residual, env, inputs, niters):
             params = opt_get_params(opt_state)
             return opt_update(
                 i,
-                grad_loss(
-                    params, u, residual, Q, M, coll_num_nodes, lam, dt, u0, C,
-                    restol, inputs, niters,
-                    # params, norm_res,
-                ),
+                grad_loss(params, u, residual, env, inputs, niters),
                 opt_state,
             )
 
         if use_unstable_jax_jit:
-            update = jax.jit(update, static_argnums=(5, 6, 8, 11))
-            # update = jax.jit(update)
+            # update = jax.jit(update, static_argnums=(4,))
+            update = jax.jit(update)
     else:
         def loss(params, norm_res, niters):
             return jnp.sum(calc_loss(norm_res, niters))
@@ -379,25 +394,21 @@ def main():
         batch_index = 0
 
         while steps_taken < steps:
-            (coll, Q, u0, lam, C, u, residual) = get_initial(M, dt, rng)
+            env, u = get_env(env_constants, rng)
+            residual = env['initial_residual']
             norm_res = _norm(residual)
-            coll_num_nodes = coll.num_nodes
-            # prev_u = jnp.zeros_like(u)
             inputs = init_input(input_shape)
 
             niters = 0
-            while (norm_res > restol
-                   and niters < max_episode_length
+            while (norm_res > env['restol']
+                   and niters < env['max_episode_length']
                    and steps_taken < steps):
                 params = opt_get_params(opt_state)
 
                 if not ignore_inputs:
                     inputs = build_input(inputs, u, residual, niters)
                 action = model_apply(params, inputs)
-                norm_res, u, residual, niters_ = step_fun(
-                    action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
-                    max_episode_length,
-                )
+                norm_res, u, residual, niters_ = step_fun(action, u, env)
 
                 if jnp.isnan(norm_res):
                     print('ERR:', steps_taken)
@@ -420,8 +431,7 @@ def main():
                 if batch_index >= batch_size:
                     if not use_simple_loss:
                         opt_state = update(
-                            steps_taken, opt_state, u, residual, Q, M,
-                            coll_num_nodes, lam, dt, u0, C, restol,
+                            steps_taken, opt_state, u, residual, env,
                             input_batch, niters_batch,
                         )
                     else:
@@ -483,33 +493,36 @@ def main():
         results = []
 
         for i in range(ntests):
-            (coll, Q, u0, lam, C, u, residual) = get_initial(M, dt, rng)
+            env, u = get_env(env_constants, rng)
+            residual = env['initial_residual']
             norm_res = _norm(residual)
-            coll_num_nodes = coll.num_nodes
             inputs = init_input(input_shape)
 
             niters = 0
             err = False
-            while (norm_res > restol
-                   and niters < max_episode_length
-                   and not err):
+            while (
+                    norm_res > env['restol']
+                    and niters < env['max_episode_length']
+                    and not err
+            ):
                 if not ignore_inputs:
                     inputs = build_input(inputs, u, residual, niters)
                 action = model_apply(trained_params, inputs)
-                norm_res, u, residual, niters_ = step_fun(
-                    action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
-                    max_episode_length,
-                )
+                norm_res, u, residual, niters_ = step_fun(action, u, env)
 
                 err = jnp.isnan(norm_res)
                 niters = niters_ if use_full_step_env else niters + 1
 
             if err:
                 print('Test ERR')
-            if norm_res <= restol and niters < max_episode_length and not err:
+            if (
+                    norm_res <= env['restol']
+                    and niters < env['max_episode_length']
+                    and not err
+            ):
                 nsucc += 1
                 mean_niter += niters
-                results.append((lam.real, niters))
+                results.append((env['lam'].real, niters))
             if i % 250 == 0:
                 print(f'{i} tests done...')
 
