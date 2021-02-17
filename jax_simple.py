@@ -12,13 +12,14 @@ import numpy as np
 from pySDC.implementations.collocation_classes.gauss_radau_right import \
     CollGaussRadau_Right
 
+# Use double precision
 jax.config.update('jax_enable_x64', True)
 
 # Is buggy so don't use until fixed
 use_jax_control_flow = False
 # For full step: do not stop early, always iterate
-# `max_episode_length` times
-use_for_max_episode_length = False
+# `max_episode_length` times. Enables us to JIT-compile the function.
+unroll_full_step = False
 # Whether to JIT loss and other functions that may not work
 use_unstable_jax_jit = True
 use_simple_loss = False
@@ -123,7 +124,7 @@ def full_step(action, u, Q, M, coll_num_nodes, lam, dt, u0, C, restol,
     norm_res = _norm(residual)
     # norm_res_old = _norm(init_resid)
 
-    if use_for_max_episode_length:
+    if unroll_full_step:
         for niters in range(max_episode_length):
             u = _update_u(u, Pinv, u0, C)
             residual = _residual(u, u0, C)
@@ -281,7 +282,7 @@ def main():
                 #     lambda _: norm_res,
                 # )
             else:
-                if use_for_max_episode_length:
+                if unroll_full_step:
                     return norm_res
                 return jnp.sum(norm_res + niters)
                 # if not jnp.isnan(norm_res):
@@ -381,7 +382,7 @@ def main():
 
                 if steps_taken % collect_data_interval == 0:
                     norm_resids.append(norm_res)
-                    if use_for_max_episode_length:
+                    if unroll_full_step:
                         losses.append(norm_res)
                     else:
                         losses.append(norm_res + niters)
