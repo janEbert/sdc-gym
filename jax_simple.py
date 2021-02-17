@@ -216,7 +216,11 @@ def main():
     # lr = 0.001
     lr = 0.0003 * (np.log2(batch_size) + 1)
     # lr = 0.0003 * batch_size
+    start_lr = 0.0003 * (np.log2(batch_size) + 1)
+    end_lr = 0.0001
+    steps_to_end_lr = 50000
     input_shape = (M * 2 * max_episode_length,)
+    use_lr_scheduling = True
 
     do_train = True
     ignore_inputs = False
@@ -230,7 +234,12 @@ def main():
 
     model_init, model_apply = build_model(M)
     _, params = model_init(rng_key, input_shape)
-    opt_state, opt_update, opt_get_params = build_opt(lr, params)
+    if use_lr_scheduling:
+        opt_state, opt_update, opt_get_params = build_opt(
+            optimizers.polynomial_decay(
+                start_lr, steps_to_end_lr, end_lr, 1.0), params)
+    else:
+        opt_state, opt_update, opt_get_params = build_opt(lr, params)
 
     if use_unstable_jax_jit:
         pass
