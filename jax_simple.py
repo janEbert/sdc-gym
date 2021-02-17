@@ -30,6 +30,9 @@ def get_initial(M, dt, rng):
 
     lam = (1 * rng.uniform(low=-100.0, high=0.0)
            + 0j * rng.uniform(low=0.0, high=10.0))
+    # lam = (1 * rng.uniform(low=-10.0, high=0.0)
+    #        + 0j * rng.uniform(low=0.0, high=10.0))
+    # lam = -10.0 + 0.0j
     C = jnp.eye(coll.num_nodes) - lam * dt * Q
     u = jnp.ones(coll.num_nodes, dtype=jnp.complex128)
 
