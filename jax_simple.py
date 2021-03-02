@@ -43,7 +43,8 @@ max_episode_length = 50
 
 steps = 1000000
 batch_size = 256
-hidden_layers = [32, 64, 32]
+hidden_layers = [64, 64]
+# hidden_layers = [32, 64, 32]
 # lr = 0.0001
 # lr = 0.0003
 # lr = 0.001
@@ -226,7 +227,7 @@ def build_model(input_shape, hidden_layers, M, seed):
             lambda x: jax.lax.convert_element_type(x.real, jnp.float64)),
         *hidden_layers,
         stax.Dense(M),
-        stax.Sigmoid,
+        # stax.Sigmoid,
     )
 
     rng_key = jax.random.PRNGKey(seed)
